@@ -295,6 +295,49 @@ class PlayerGestureHelper(private val playerView: PlayerView) {
         }
     }
 
+    /** Volume/brightness slider show/hide animation */
+
+    // Tracks the intended (target) visibility so the grow-in animation runs exactly once per
+    // appearance instead of restarting on every swipe frame (which looked stuck/laggy).
+    private var volumeSliderShown = false
+    private var brightnessSliderShown = false
+
+    /**
+     * Horizontal scale pivot (in [holder] coordinates) that keeps the visible slider anchored while
+     * scaling. The holders are wide containers with the slider offset inside them, so we pivot
+     * around the progress bar's own centre rather than the holder's centre/edge.
+     */
+    private fun sliderPivotX(holder: View, bar: View): Float = bar.x + bar.width / 2f
+
+    /**
+     * Grows a slider in from a smaller, semi-transparent state to full size and full opacity.
+     * The animation is deferred to [View.post] so the views are laid out first; otherwise the
+     * pivot is computed from stale (0) bounds and the slider appears to slide in from the corner.
+     */
+    private fun animateSliderIn(holder: View, bar: View) {
+        holder.animate().cancel()
+        // Hidden until laid out to avoid a one-frame flash at the wrong pivot.
+        holder.alpha = 0f
+        holder.isVisible = true
+        holder.post {
+            holder.pivotX = sliderPivotX(holder, bar)
+            holder.pivotY = holder.height / 2f
+            holder.scaleX = 0.85f
+            holder.scaleY = 0.85f
+            holder.alpha = 0.4f
+            holder.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(150).start()
+        }
+    }
+
+    /** Reverses [animateSliderIn]: shrinks toward the bar's centre and fades out, then hides. */
+    private fun animateSliderOut(holder: View, bar: View) {
+        holder.animate().cancel()
+        holder.pivotX = sliderPivotX(holder, bar)
+        holder.pivotY = holder.height / 2f
+        holder.animate().alpha(0f).scaleX(0.85f).scaleY(0.85f).setDuration(300)
+            .withEndAction { holder.isVisible = false }.start()
+    }
+
     /** Volume helpers */
 
     /**
@@ -413,13 +456,14 @@ class PlayerGestureHelper(private val playerView: PlayerView) {
         val iconIdx = (next * volumeIcons.lastIndex).roundToInt().coerceIn(0, volumeIcons.lastIndex)
         icon.setImageResource(volumeIcons[iconIdx])
 
-        if (!leftHolder.isVisible || leftHolder.alpha < 1f) {
-            leftHolder.animate().cancel(); leftHolder.alpha = 1f; leftHolder.isVisible = true
+        if (!volumeSliderShown) {
+            volumeSliderShown = true
+            animateSliderIn(leftHolder, level1)
         }
         progressBarLeftHideRunnable?.let { leftHolder.removeCallbacks(it) }
         progressBarLeftHideRunnable = Runnable {
-            leftHolder.animate().cancel()
-            leftHolder.animate().alpha(0f).setDuration(300).withEndAction { leftHolder.isVisible = false }.start()
+            volumeSliderShown = false
+            animateSliderOut(leftHolder, level1)
         }
         // Show the progress bar for 1.5 seconds.
         leftHolder.postDelayed(progressBarLeftHideRunnable, 1500)
@@ -525,13 +569,14 @@ class PlayerGestureHelper(private val playerView: PlayerView) {
             brightnessIcons[min(brightnessIcons.lastIndex, max(0, round(next * brightnessIcons.lastIndex).toInt()))]
         )
 
-        if (!rightHolder.isVisible || rightHolder.alpha < 1f) {
-            rightHolder.animate().cancel(); rightHolder.alpha = 1f; rightHolder.isVisible = true
+        if (!brightnessSliderShown) {
+            brightnessSliderShown = true
+            animateSliderIn(rightHolder, level1)
         }
         progressBarRightHideRunnable?.let { rightHolder.removeCallbacks(it) }
         progressBarRightHideRunnable = Runnable {
-            rightHolder.animate().cancel()
-            rightHolder.animate().alpha(0f).setDuration(300).withEndAction { rightHolder.isVisible = false }.start()
+            brightnessSliderShown = false
+            animateSliderOut(rightHolder, level1)
         }
         rightHolder.postDelayed(progressBarRightHideRunnable, 1500)
     }

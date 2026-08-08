@@ -1138,7 +1138,7 @@
         android:id="@+id/player_episode_overlay"
         android:visibility="gone"
         android:padding="5dp"
-        android:background="?attr/primaryBlackBackground"
+        android:background="@color/player_dialog_scrim"
         android:orientation="vertical"
         android:layout_gravity="end"
         android:layout_width="wrap_content"

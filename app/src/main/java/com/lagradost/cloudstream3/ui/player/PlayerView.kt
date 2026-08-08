@@ -16,6 +16,7 @@ import android.os.Looper
 import android.text.format.DateUtils
 import android.util.AttributeSet
 import android.util.Log
+import android.util.TypedValue
 import android.view.View
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -82,6 +83,12 @@ class PlayerView @JvmOverloads constructor(
 
     companion object {
         private const val TAG = "PlayerView"
+
+        /** Fraction of the normal subtitle size to use while in picture-in-picture. */
+        private const val PIP_SUBTITLE_SCALE = 0.5f
+
+        /** Never shrink PIP subtitles below this (sp) or they become unreadable. */
+        private const val MIN_PIP_SUBTITLE_SP = 8.0f
     }
 
     /** All gesture, volume, brightness and key-event logic lives here. */
@@ -417,8 +424,18 @@ class PlayerView @JvmOverloads constructor(
             gestureHelper.initialize()
             setupKeyEventListener()
 
-            // Apply duration-mode display (remaining time vs elapsed); TV always shows remaining
-            setRemainingTimeCounter(durationMode || isLayout(TV))
+            // Apply duration-mode display (remaining time vs elapsed).
+            // On phone the user taps the time text to toggle (persisted via durationMode).
+            // On TV there is no tap, so it reads a dedicated setting instead
+            // (default true = show the remaining-time countdown, as before).
+            setRemainingTimeCounter(
+                if (isLayout(TV))
+                    PreferenceManager.getDefaultSharedPreferences(context).getBoolean(
+                        context.getString(R.string.show_remaining_time_key),
+                        true
+                    )
+                else durationMode
+            )
         }
     }
 
@@ -496,6 +513,12 @@ class PlayerView @JvmOverloads constructor(
         try {
             isInPIPMode = isInPictureInPictureMode
             if (isInPictureInPictureMode) {
+                // Shrink subtitles for the tiny PIP window; restored on exit below.
+                val normalSize = SubtitlesFragment.getCurrentSavedStyle().fixedTextSize ?: 25.0f
+                subView?.setFixedTextSize(
+                    TypedValue.COMPLEX_UNIT_SP,
+                    (normalSize * PIP_SUBTITLE_SCALE).coerceAtLeast(MIN_PIP_SUBTITLE_SP)
+                )
                 // Hide the full-screen UI (controls, etc.) while in picture-in-picture mode.
                 piphide?.isVisible = false
                 pipReceiver = object : BroadcastReceiver() {
@@ -518,6 +541,9 @@ class PlayerView @JvmOverloads constructor(
                 val status = if (isPlaying) CSPlayerLoading.IsPlaying else CSPlayerLoading.IsPaused
                 updateIsPlaying(status, status)
             } else {
+                // Restore the normal subtitle size that we shrank when entering PIP.
+                val normalSize = SubtitlesFragment.getCurrentSavedStyle().fixedTextSize ?: 25.0f
+                subView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, normalSize)
                 // Restore the full-screen UI.
                 piphide?.isVisible = true
                 callbacks?.exitedPipMode()
@@ -531,6 +557,14 @@ class PlayerView @JvmOverloads constructor(
         } catch (e: Exception) {
             logError(e)
         }
+    }
+
+    /**
+     * Pins the seek bar's scrubber to [position] to preview a deferred seek (dpad press-and-hold),
+     * or pass null to release it back to live playback tracking.
+     */
+    fun setSeekPreviewPosition(position: Long?) {
+        exoProgress?.previewOverridePosition = position
     }
 
     /** Player UI helpers */

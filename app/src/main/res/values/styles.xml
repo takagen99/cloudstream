@@ -573,6 +573,8 @@
         <item name="android:windowMinWidthMajor">@dimen/abc_dialog_min_width_major</item>
         <item name="android:windowMinWidthMinor">@dimen/abc_dialog_min_width_minor</item>
         <item name="android:windowBackground">@drawable/dialog__window_background</item>
+        <!-- Reduce scrim so the player video shows through behind the dialog -->
+        <item name="android:backgroundDimAmount">0.3</item>
     </style>
 
     <style name="AlertDialogCustomTransparent" parent="Theme.AppCompat.Dialog.Alert">
@@ -589,7 +591,8 @@
     </style>
 
     <style name="DialogFullscreenPlayer" parent="DialogFullscreen">
-        <item name="android:windowBackground">?attr/primaryBlackBackground</item>
+        <item name="android:windowBackground">@color/player_dialog_scrim</item>
+        <item name="android:backgroundDimAmount">0</item>
         <item name="android:windowTranslucentNavigation">false</item>
         <item name="android:windowTranslucentStatus">false</item>
 

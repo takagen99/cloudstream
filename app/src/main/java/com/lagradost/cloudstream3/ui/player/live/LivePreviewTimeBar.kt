@@ -18,16 +18,28 @@ class LivePreviewTimeBar(val ctx: Context, attrs: AttributeSet) : PreviewTimeBar
     private var _currentPlayerView: WeakReference<PlayerView>? = null
     val currentPlayer: Player? get() = _currentPlayerView?.get()?.player
 
+    /**
+     * When non-null, pins the scrubber thumb to this position instead of the live playback
+     * position. Used to preview a deferred dpad seek while the video keeps playing.
+     */
+    var previewOverridePosition: Long? = null
+        set(value) {
+            field = value
+            if (value != null) setPosition(value)
+        }
+
     fun registerPlayerView(player: PlayerView?) {
         _currentPlayerView = WeakReference(player)
         val controller =
             _currentPlayerView?.get()?.findViewById<PlayerControlView>(R.id.exo_controller)
 
+        // Runs after the control view sets the live position each tick, so overriding here wins
+        // and keeps the thumb pinned to the preview target between key presses.
         controller?.setProgressUpdateListener { position, bufferedPosition ->
-            currentPlayer?.let { player ->
-                if (isAtLiveEdge()) {
-                    setPosition(player.duration)
-                }
+            val override = previewOverridePosition
+            when {
+                override != null -> setPosition(override)
+                isAtLiveEdge() -> currentPlayer?.let { setPosition(it.duration) }
             }
         }
     }

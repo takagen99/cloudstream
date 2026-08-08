@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
@@ -225,6 +226,7 @@ class GeneratorPlayer : FullScreenPlayer() {
         val tracks = player.getVideoTracks()
         playerBinding?.playerTracksBtt?.isVisible =
             tracks.allVideoTracks.size > 1 || tracks.allAudioTracks.size > 1
+        updateBottomButtonFocus()
         // Only set the preferred language if it is available.
         // Otherwise, it may give some users audio track init failed!
         if (tracks.allAudioTracks.any { it.language == preferredAudioTrackLanguage }) {
@@ -597,6 +599,10 @@ class GeneratorPlayer : FullScreenPlayer() {
         val binding =
             DialogOnlineSubtitlesBinding.inflate(LayoutInflater.from(context), null, false)
         dialog.setContentView(binding.root)
+        // Uniform transparency: one scrim layer on the root, clear the ListView's opaque
+        // background so the empty area isn't darker than the rest (matches source/tracks dialogs).
+        binding.root.setBackgroundResource(R.color.player_dialog_scrim)
+        binding.subtitleAdapter.setBackgroundColor(Color.TRANSPARENT)
         fixSystemBarsPadding(binding.root)
 
         var currentSubtitles: List<AbstractSubtitleEntities.SubtitleEntity> = emptyList()
@@ -732,6 +738,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                         )
 
                     // TODO Make ui a lot better, like search with tabs
+                    var hadFailure = false
                     val results = providers.amap {
                         when (val response = Resource.fromResult(it.search(search))) {
                             is Resource.Success -> {
@@ -743,7 +750,14 @@ class GeneratorPlayer : FullScreenPlayer() {
                             }
 
                             is Resource.Failure -> {
-                                showToast(response.errorString)
+                                // A single provider being unreachable (e.g. a connection timeout)
+                                // shouldn't dump a stack trace over the results; just log it and
+                                // let the other providers' results through.
+                                hadFailure = true
+                                Log.e(
+                                    "SubtitleSearch",
+                                    "${it.name} subtitle search failed: ${response.errorString}"
+                                )
                                 emptyList()
                             }
                         }
@@ -763,6 +777,10 @@ class GeneratorPlayer : FullScreenPlayer() {
                     activity?.runOnUiThread {
                         setSubtitlesList(items)
                         binding.searchLoadingBar.hide()
+                        // Only surface a concise error when a failure left us with nothing to show.
+                        if (items.isEmpty() && hadFailure) {
+                            showToast(R.string.subtitles_search_failed)
+                        }
                     }
                 }
 
@@ -1013,11 +1031,11 @@ class GeneratorPlayer : FullScreenPlayer() {
 
     override fun showMirrorsDialogue() {
         try {
+            hidePlayerUI()
+            val shouldResume = pauseForDialogIfEnabled()
             currentSelectedSubtitles = player.getCurrentPreferredSubtitle()
             //println("CURRENT SELECTED :$currentSelectedSubtitles of $currentSubs")
             context?.let { ctx ->
-                val isPlaying = player.getIsPlaying()
-                player.handleEvent(CSPlayerEvent.Pause, PlayerEventSource.UI)
                 val currentSubtitles = sortSubs(viewModel.state.subtitles)
 
                 val sourceDialog = Dialog(ctx, R.style.DialogFullscreenPlayer)
@@ -1028,6 +1046,12 @@ class GeneratorPlayer : FullScreenPlayer() {
                 fixSystemBarsPadding(binding.root)
                 selectSourceDialog = sourceDialog
 
+                // Uniform transparency: one scrim layer on the root, and clear the ListView
+                // backgrounds so content areas aren't darker than empty areas.
+                binding.root.setBackgroundResource(R.color.player_dialog_scrim)
+                binding.sortProviders.setBackgroundColor(Color.TRANSPARENT)
+                binding.sortSubtitles.setBackgroundColor(Color.TRANSPARENT)
+                binding.sortSubtitlesOptions.setBackgroundColor(Color.TRANSPARENT)
                 sourceDialog.show()
                 val providerList = binding.sortProviders
                 val subtitleList = binding.sortSubtitles
@@ -1053,9 +1077,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                 }
 
                 fun dismiss() {
-                    if (isPlaying) {
-                        player.handleEvent(CSPlayerEvent.Play)
-                    }
+                    resumeAfterDialog(shouldResume)
                     activity?.hideSystemUI()
                 }
 
@@ -1408,12 +1430,11 @@ class GeneratorPlayer : FullScreenPlayer() {
 
     override fun showTracksDialogue() {
         try {
+            hidePlayerUI()
+            val shouldResume = pauseForDialogIfEnabled()
             //println("CURRENT SELECTED :$currentSelectedSubtitles of $currentSubs")
             context?.let { ctx ->
                 val tracks = player.getVideoTracks()
-
-                val isPlaying = player.getIsPlaying()
-                player.handleEvent(CSPlayerEvent.Pause)
 
                 val currentVideoTracks = tracks.allVideoTracks.sortedBy {
                     it.height?.times(-1)
@@ -1424,6 +1445,11 @@ class GeneratorPlayer : FullScreenPlayer() {
                 val trackDialog = Dialog(ctx, R.style.DialogFullscreenPlayer)
                 this.selectTrackDialog = trackDialog
                 trackDialog.setContentView(binding.root)
+                // Uniform transparency: one scrim layer on the root, and clear the ListView
+                // backgrounds so content areas aren't darker than empty areas.
+                binding.root.setBackgroundResource(R.color.player_dialog_scrim)
+                binding.videoTracksList.setBackgroundColor(Color.TRANSPARENT)
+                binding.autoTracksList.setBackgroundColor(Color.TRANSPARENT)
                 trackDialog.show()
 
                 fixSystemBarsPadding(binding.root)
@@ -1437,9 +1463,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                 binding.audioTracksHolder.isVisible = currentAudioTracks.size > 1
 
                 fun dismiss() {
-                    if (isPlaying) {
-                        player.handleEvent(CSPlayerEvent.Play)
-                    }
+                    resumeAfterDialog(shouldResume)
                     activity?.hideSystemUI()
                 }
 
@@ -1788,6 +1812,9 @@ class GeneratorPlayer : FullScreenPlayer() {
             }
 
         }
+        // Skip-op / skip-episode buttons appear/disappear during playback; keep the
+        // TV bottom-row left/right focus chain in sync so navigation can't escape the row.
+        updateBottomButtonFocus()
 
         if (percentage >= PRELOAD_NEXT_EPISODE_PERCENTAGE) {
             viewModel.preLoadNextLinks()
@@ -2167,16 +2194,16 @@ class GeneratorPlayer : FullScreenPlayer() {
                 // Scroll to current episode
                 viewModel.state.generatorState?.index?.let { index ->
                     playerEpisodeList.scrollToPosition(index)
-                    // Ensure focus on tv
-                    if (isLayout(TV)) {
+                    // Ensure focus lands on the list; the player controls have slid away, so
+                    // without this the focus falls through and nothing is clickable (TV/emulator).
+                    if (isLayout(TV or EMULATOR)) {
                         playerEpisodeList.post {
                             val viewHolder =
                                 playerEpisodeList.findViewHolderForAdapterPosition(index)
-                            viewHolder?.itemView?.requestFocus()
                             viewHolder?.itemView?.let { itemView ->
                                 itemView.isFocusableInTouchMode = true
                                 itemView.requestFocus()
-                            }
+                            } ?: playerEpisodeList.requestFocus()
                         }
                     }
                 }

@@ -1355,6 +1355,7 @@ class ResultViewModel2 : ViewModel() {
 
 
     private suspend fun handleEpisodeClickEvent(click: EpisodeClickEvent) {
+        Log.d("TVDEBUG", "handleEpisodeClickEvent: action=${click.action} dataId=${click.data.id} ep=${click.data.episode}")
         when (click.action) {
             ACTION_SHOW_OPTIONS -> {
                 val options = mutableListOf<Pair<UiText, Int>>()
@@ -1550,9 +1551,23 @@ class ResultViewModel2 : ViewModel() {
                 // I know kinda shit to iterate all, but it is 100% sure to work
                 val index = generator.videos.indexOfFirst { value -> value.id == click.data.id }
 
+                // The clicked episode is not part of the currently cached generator
+                // (eg. it went stale after returning from the player). Fall back to a
+                // generator scoped to just this episode instead of launching the
+                // player with an invalid (-1) index, which results in a blank screen.
+                val (playGenerator, playIndex) = if (index == -1) {
+                    RepoLinkGenerator(listOf(click.data), page = currentResponse) to 0
+                } else {
+                    generator to index
+                }
+                Log.d(
+                    "TVDEBUG",
+                    "ACTION_PLAY_EPISODE_IN_PLAYER: generatorVideos=${generator.videos.size} foundIndex=$index playIndex=$playIndex type=${currentResponse?.type} activity=${activity != null}"
+                )
+
                 if (currentResponse?.type == TvType.CustomMedia) {
-                    generator.generateLinks(
-                        offset = index,
+                    playGenerator.generateLinks(
+                        offset = playIndex,
                         clearCache = true,
                         isCasting = false,
                         sourceTypes = LOADTYPE_ALL,
@@ -1562,7 +1577,7 @@ class ResultViewModel2 : ViewModel() {
                     activity?.navigate(
                         R.id.global_to_navigation_player,
                         GeneratorPlayer.newInstance(
-                            generator, index,list
+                            playGenerator, playIndex, list
                         )
                     )
                 }
@@ -1938,16 +1953,28 @@ class ResultViewModel2 : ViewModel() {
     }
 
     fun reloadEpisodes() {
+        Log.d(
+            "TVDEBUG",
+            "reloadEpisodes: hasLoaded=${hasLoaded()} isMovie=${currentResponse?.isMovie()} " +
+                    "currentId=$currentId currentIndex=$currentIndex currentRange=$currentRange currentSorting=$currentSorting"
+        )
         if (currentResponse?.isMovie() == true) {
             postMovie()
         } else {
+            val index = currentIndex
+            val range = currentRange
+            val sorting = currentSorting
+            if (index == null || range == null || sorting == null) {
+                Log.d(
+                    "TVDEBUG",
+                    "reloadEpisodes: EARLY RETURN (index/range/sorting null) -> episodes/resume NOT reposted"
+                )
+                return
+            }
             _episodes.postValue(
                 Resource.Success(
                     getSortedEpisodes(
-                        getEpisodes(
-                            currentIndex ?: return,
-                            currentRange ?: return,
-                        ), currentSorting ?: return
+                        getEpisodes(index, range), sorting
                     )
                 )
             )
@@ -2402,7 +2429,9 @@ class ResultViewModel2 : ViewModel() {
     }
 
     private fun postResume() {
-        _resumeWatching.postValue(resume())
+        val r = resume()
+        Log.d("TVDEBUG", "postResume: resume=${if (r == null) "null" else "episode=${r.result.episode} isMovie=${r.isMovie}"}")
+        _resumeWatching.postValue(r)
     }
 
     private fun resume(): ResumeWatchingStatus? {

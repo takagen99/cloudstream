@@ -40,6 +40,12 @@
             android:icon="@drawable/ic_baseline_text_format_24"
             android:key="@string/hide_player_control_names_key"
             android:title="@string/hide_player_control_names" />
+        <SwitchPreference
+            android:defaultValue="false"
+            android:icon="@drawable/ic_baseline_pause_24"
+            android:key="@string/pause_video_on_dialog_key"
+            android:summary="@string/pause_video_on_dialog_des"
+            android:title="@string/pause_video_on_dialog" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/pref_category_subtitles">
@@ -197,6 +203,12 @@
     <PreferenceCategory
         android:key="@string/pref_category_android_tv_key"
         android:title="@string/pref_category_android_tv">
+        <SwitchPreference
+            android:icon="@drawable/ic_baseline_clock_24"
+            android:summary="@string/show_remaining_time_desc"
+            android:title="@string/show_remaining_time"
+            app:defaultValue="true"
+            app:key="@string/show_remaining_time_key" />
         <SeekBarPreference
             android:defaultValue="10"
             android:max="60"

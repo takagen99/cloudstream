@@ -13,11 +13,13 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
+import android.text.format.DateUtils
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.View
+import android.widget.Toast
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -39,6 +41,7 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.SimpleItemAnimator
 import com.google.android.material.button.MaterialButton
 import com.lagradost.cloudstream3.CommonActivity.keyEventListener
+import com.lagradost.cloudstream3.CommonActivity.showToast
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.databinding.FragmentPlayerBinding
@@ -65,6 +68,7 @@ import com.lagradost.cloudstream3.utils.UIHelper.popCurrentPage
 import com.lagradost.cloudstream3.utils.UIHelper.toPx
 import com.lagradost.cloudstream3.utils.setText
 import com.lagradost.cloudstream3.utils.txt
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val SUBTITLE_DELAY_BUNDLE_KEY = "subtitle_delay"
@@ -100,6 +104,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
     protected var playerRotateEnabled = false
     protected var rotatedManually = false
     private var hideControlsNames = false
+
+    /** When true, opening the Speed/Source/Tracks/Episodes dialogs pauses the video
+     *  (and resumes on dismiss). When false, playback continues behind the dialog. */
+    protected var pauseVideoOnDialog = false
     protected var subtitleDelay
         set(value) = try {
             player.setSubtitleOffset(-value)
@@ -115,6 +123,11 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
     private var isShowingEpisodeOverlay: Boolean = false
     private var previousPlayStatus: Boolean = false
+
+    // Deferred dpad seek (controls visible): while left/right is held the video keeps playing and
+    // only a preview accumulates; the actual seek is committed when the key is released.
+    private var dpadSeekTargetMs: Long? = null
+    private var dpadSeekStartPosition: Long? = null
 
     override fun fixLayout(view: View) = Unit
 
@@ -354,6 +367,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         // Subtitle offset is not possible on built-in media3 tracks
         playerBinding?.playerSubtitleOffsetBtt?.isGone =
             isBuiltinSubtitles || tracks.currentTextTracks.isEmpty()
+        updateBottomButtonFocus()
     }
 
     private fun restoreOrientationWithSensor(activity: Activity) {
@@ -445,6 +459,9 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         }
     }
 
+    /** Timestamp of the last back press used for the TV "press back again to exit" prompt. */
+    private var mExitTime: Long = 0
+
     override fun onResume() {
         playerHostView?.enterFullscreen { updateOrientation() }
         setupKeyEventListener()
@@ -460,6 +477,16 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             } else if (isShowing && isLayout(TV or EMULATOR)) {
                 // netflix capture back and hide ~monke
                 onClickChange()
+            } else if (isLayout(TV or EMULATOR)) {
+                // On TV a stray remote back press can accidentally drop out of playback,
+                // so require a second press within 2s (showing a hint on the first press).
+                val now = System.currentTimeMillis()
+                if (now - mExitTime < 2000) {
+                    activity?.popCurrentPage("FullScreenPlayer")
+                } else {
+                    mExitTime = now
+                    showToast(R.string.player_press_back_again, Toast.LENGTH_SHORT)
+                }
             } else {
                 activity?.popCurrentPage("FullScreenPlayer")
             }
@@ -498,7 +525,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
     private fun showSubtitleOffsetDialog() {
         val ctx = context ?: return
+        hidePlayerUI()
         // Pause player because the subtitles cannot be continuously updated to follow playback.
+        // Remember whether it was playing so we can resume on dismiss (Apply/Reset/Cancel).
+        val wasPlaying = player.getIsPlaying()
         player.handleEvent(
             CSPlayerEvent.Pause,
             PlayerEventSource.UI
@@ -601,6 +631,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
             dialog.setOnDismissListener {
                 selectSubtitlesDialog = null
+                // Resume playback that we paused when the dialog opened (Apply/Reset/Cancel/back).
+                if (wasPlaying) {
+                    player.handleEvent(CSPlayerEvent.Play, PlayerEventSource.UI)
+                }
                 activity?.hideSystemUI()
             }
             applyBtt.setOnClickListener {
@@ -634,8 +668,8 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
     private fun showSpeedDialog() {
         val act = activity ?: return
-        val isPlaying = player.getIsPlaying()
-        player.handleEvent(CSPlayerEvent.Pause, PlayerEventSource.UI)
+        hidePlayerUI()
+        val shouldResume = pauseForDialogIfEnabled()
 
         val binding: SpeedDialogBinding = SpeedDialogBinding.inflate(
             LayoutInflater.from(act)
@@ -674,9 +708,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
         val dismiss = DialogInterface.OnDismissListener {
             activity?.hideSystemUI()
-            if (isPlaying) {
-                player.handleEvent(CSPlayerEvent.Play, PlayerEventSource.UI)
-            }
+            resumeAfterDialog(shouldResume)
             selectSpeedDialog = null
         }
 
@@ -694,6 +726,9 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         val dialog = builder.create()
         this.selectSpeedDialog = dialog
         dialog.show()
+        dialog.window?.let { w ->
+            val p = w.attributes; p.alpha = 0.85f; w.attributes = p
+        }
         //}
     }
 
@@ -783,6 +818,39 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             shadowOverlay.isGone = isGone
             playerSkipEpisode.isClickable = !isGone
         }
+        updateBottomButtonFocus()
+    }
+
+    /**
+     * TV/EMULATOR: the bottom control buttons (resize, subtitles, source, …) declare static
+     * left/right focus neighbours in XML, but which buttons are visible is dynamic. When a
+     * declared neighbour is currently GONE, a left/right press can't resolve it and Android
+     * falls back to a geometric focus search that escapes the row (e.g. jumps up to play/pause).
+     *
+     * This rewires left/right focus among only the currently-shown buttons, in order, with the
+     * outermost buttons focusing themselves so navigation stays within the row.
+     */
+    protected fun updateBottomButtonFocus() {
+        if (!isLayout(TV or EMULATOR)) return
+        val binding = playerBinding ?: return
+        val ordered = listOf(
+            binding.playerLock,
+            binding.playerRotateBtt,
+            binding.playerSkipOp,
+            binding.playerSkipEpisode,
+            binding.playerResizeBtt,
+            binding.playerSpeedBtt,
+            binding.playerSubtitleOffsetBtt,
+            binding.playerSourcesBtt,
+            binding.playerTracksBtt,
+        )
+        val visible = ordered.filter { it.isShown }
+        if (visible.isEmpty()) return
+        visible.forEachIndexed { index, button ->
+            button.nextFocusLeftId = (if (index == 0) button else visible[index - 1]).id
+            button.nextFocusRightId =
+                (if (index == visible.lastIndex) button else visible[index + 1]).id
+        }
     }
 
     private fun updateLockUI() {
@@ -813,6 +881,25 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         if (isShowing) {
             isShowing = false
             animateLayoutChanges()
+        }
+    }
+
+    /**
+     * Called when a player dialog (Speed/Source/Tracks/Episodes) opens. If the user enabled
+     * [pauseVideoOnDialog], pauses playback and returns true so the caller can resume on dismiss.
+     */
+    protected fun pauseForDialogIfEnabled(): Boolean {
+        if (pauseVideoOnDialog && player.getIsPlaying()) {
+            player.handleEvent(CSPlayerEvent.Pause, PlayerEventSource.UI)
+            return true
+        }
+        return false
+    }
+
+    /** Resumes playback if [pauseForDialogIfEnabled] paused it. */
+    protected fun resumeAfterDialog(shouldResume: Boolean) {
+        if (shouldResume) {
+            player.handleEvent(CSPlayerEvent.Play, PlayerEventSource.UI)
         }
     }
 
@@ -979,10 +1066,12 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (!isShowing && !isLocked && !isShowingEpisodeOverlay) {
-                    player.seekTime(-androidTVInterfaceOffSeekTime)
+                    // Controls hidden: keep playing, accumulate a preview, seek on release.
+                    accumulateDpadSeek(-androidTVInterfaceOffSeekTime)
                     return true
                 } else if (playerBinding?.playerPausePlay?.isFocused == true) {
-                    player.seekTime(-androidTVInterfaceOnSeekTime)
+                    // Controls visible: keep playing, accumulate a preview, seek on release.
+                    accumulateDpadSeek(-androidTVInterfaceOnSeekTime)
                     return true
                 } else {
                     return null
@@ -991,9 +1080,13 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (!isShowing && !isLocked && !isShowingEpisodeOverlay) {
-                    player.seekTime(androidTVInterfaceOffSeekTime)
+                    // Controls hidden: keep playing, accumulate a preview, seek on release.
+                    accumulateDpadSeek(androidTVInterfaceOffSeekTime)
+                    return true
                 } else if (playerBinding?.playerPausePlay?.isFocused == true) {
-                    player.seekTime(androidTVInterfaceOnSeekTime)
+                    // Controls visible: keep playing, accumulate a preview, seek on release.
+                    accumulateDpadSeek(androidTVInterfaceOnSeekTime)
+                    return true
                 } else {
                     return null
                 }
@@ -1015,17 +1108,82 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                 toggleEpisodesOverlay(true)
             }
 
+            // Colored buttons on TV remotes
+            KeyEvent.KEYCODE_PROG_RED -> {
+                player.handleEvent(CSPlayerEvent.NextEpisode)
+            }
+
+            KeyEvent.KEYCODE_PROG_GREEN -> {
+                nextResize()
+            }
+
+            KeyEvent.KEYCODE_PROG_YELLOW -> {
+                showSpeedDialog()
+            }
+
+            KeyEvent.KEYCODE_PROG_BLUE -> {
+                showMirrorsDialogue()
+            }
+
             else -> return null // Avoid capturing all input
         }
         return true
     }
 
+    /**
+     * Deferred dpad seek (works whether or not the controls are visible). Each left/right press
+     * shifts the previewed target by [stepMs] without actually seeking, so playback continues
+     * uninterrupted. The seek is committed by [commitDpadSeek] once the key is released.
+     */
+    private fun accumulateDpadSeek(stepMs: Long) {
+        val duration = player.getDuration() ?: return
+        val livePosition = player.getPosition() ?: return
+        if (dpadSeekTargetMs == null) {
+            dpadSeekStartPosition = livePosition
+        }
+        val base = dpadSeekTargetMs ?: livePosition
+        val target = (base + stepMs).coerceIn(0L, duration)
+        dpadSeekTargetMs = target
+        // Keep the controls on screen while scrubbing, but don't pop them up if hidden
+        // (autoHide toggles the UI on when it's currently hidden).
+        if (isShowing) autoHide()
+        // Move the scrubber thumb to the target so the user sees where they'll land.
+        playerHostView?.setSeekPreviewPosition(target)
+
+        val start = dpadSeekStartPosition ?: livePosition
+        val delta = target - start
+        val sign = if (abs(delta) < 1000) "" else if (delta > 0) "+" else "-"
+        onSeekPreviewText(
+            "${DateUtils.formatElapsedTime(target / 1000)} [$sign${DateUtils.formatElapsedTime(abs(delta) / 1000)}]"
+        )
+    }
+
+    /** Commits a pending [accumulateDpadSeek]. Returns true if there was one to commit. */
+    private fun commitDpadSeek(): Boolean {
+        val target = dpadSeekTargetMs ?: return false
+        dpadSeekTargetMs = null
+        dpadSeekStartPosition = null
+        onSeekPreviewText(null)
+        playerHostView?.setSeekPreviewPosition(null)
+        player.seekTo(target, PlayerEventSource.UI)
+        return true
+    }
+
     private fun handleKeyEvent(event: KeyEvent, hasNavigated: Boolean): Boolean {
         if (hasNavigated) {
+            // Focus moved away mid-seek: commit whatever was previewed.
+            commitDpadSeek()
             autoHide()
             return false
         }
         val keyCode = event.keyCode
+
+        // Commit a deferred dpad seek when left/right is released.
+        if (event.action == KeyEvent.ACTION_UP &&
+            (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)
+        ) {
+            if (commitDpadSeek()) return true
+        }
 
         if (event.action == KeyEvent.ACTION_DOWN) {
             val value = handleKeyDownEvent(keyCode)
@@ -1043,10 +1201,13 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
             KeyEvent.KEYCODE_DPAD_DOWN_RIGHT,
             KeyEvent.KEYCODE_DPAD_UP_LEFT,
             KeyEvent.KEYCODE_DPAD_UP_RIGHT -> {
-                if (!isShowing) {
-                    return true
-                } else {
-                    autoHide()
+                when {
+                    // Episode overlay open: let the RecyclerView handle up/down navigation.
+                    // (isShowing is false here because the controls slid away.)
+                    isShowingEpisodeOverlay -> return false
+                    // Controls hidden: swallow dpad so it doesn't leak to hidden buttons.
+                    !isShowing -> return true
+                    else -> autoHide()
                 }
             }
 
@@ -1150,6 +1311,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                     )
                 hideControlsNames = settingsManager.getBoolean(
                     ctx.getString(R.string.hide_player_control_names_key),
+                    false
+                )
+                pauseVideoOnDialog = settingsManager.getBoolean(
+                    ctx.getString(R.string.pause_video_on_dialog_key),
                     false
                 )
 
@@ -1336,13 +1501,14 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
     private fun toggleEpisodesOverlay(show: Boolean) {
         if (show && !isShowingEpisodeOverlay) {
-            previousPlayStatus = player.getIsPlaying()
-            player.handleEvent(CSPlayerEvent.Pause)
+            hidePlayerUI()
+            previousPlayStatus = pauseForDialogIfEnabled()
             showEpisodesOverlay()
             isShowingEpisodeOverlay = true
             animateEpisodesOverlay(true)
         } else if (isShowingEpisodeOverlay) {
-            if (previousPlayStatus) player.handleEvent(CSPlayerEvent.Play)
+            resumeAfterDialog(previousPlayStatus)
+            previousPlayStatus = false
             isShowingEpisodeOverlay = false
             animateEpisodesOverlay(false)
         }

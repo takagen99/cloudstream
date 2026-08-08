@@ -31,12 +31,14 @@ object BackPressedCallbackHelper {
         callback: CallbackHelper.() -> Unit
     ) {
         val callbackMap = backPressedCallbacks.getOrPut(this) { mutableMapOf() }
+        android.util.Log.d("TVDEBUG", "attachBackPressedCallback: id=$id alreadyExists=${callbackMap.containsKey(id)} allIds=${callbackMap.keys}")
         if (callbackMap.containsKey(id)) return
 
         // We use WeakReference to protect against potential leaks.
         val activityRef = WeakReference(this)
         val newCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                android.util.Log.d("TVDEBUG", "backPressed INTERCEPTED by callback id=$id")
                 CallbackHelper(activityRef, this).callback()
             }
         }
@@ -55,6 +57,7 @@ object BackPressedCallbackHelper {
 
     fun ComponentActivity.detachBackPressedCallback(id: String) {
         val callbackMap = backPressedCallbacks[this] ?: return
+        android.util.Log.d("TVDEBUG", "detachBackPressedCallback: id=$id existed=${callbackMap.containsKey(id)} allIds=${callbackMap.keys}")
         callbackMap[id]?.let { callback ->
             callback.remove()
             callbackMap.remove(id)

@@ -4,6 +4,7 @@ import android.animation.Animator
 import android.annotation.SuppressLint
 import android.app.Dialog
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -93,6 +94,7 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
     }
 
     private fun updateUI(id: Int?) {
+        Log.d("TVDEBUG", "updateUI(fragment): id=$id binding=${binding != null} -> reloadEpisodes()")
         viewModel.reloadEpisodes()
     }
 
@@ -127,6 +129,25 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
         this?.isVisible = data.size > 1
     }
 
+    /**
+     * Points the episode list's left-focus at the nearest visible selection bar (range → season →
+     * dub) or, when none are shown, back at the "Episodes" button. Without this, pressing left from
+     * an episode when those bars are GONE falls back to a geometric focus search that lands on the
+     * synopsis or cast instead. Updates both the view's [View.nextFocusLeftId] and the custom
+     * [LinearListLayout]'s cached target (which is what actually drives the episode item focus).
+     */
+    private fun updateEpisodeListLeftFocus() {
+        val b = binding ?: return
+        val targetId = when {
+            b.resultRangeSelection.isVisible -> R.id.result_range_selection
+            b.resultSeasonSelection.isVisible -> R.id.result_season_selection
+            b.resultDubSelection.isVisible -> R.id.result_dub_selection
+            else -> R.id.result_episodes_show_button
+        }
+        b.resultEpisodes.nextFocusLeftId = targetId
+        (b.resultEpisodes.layoutManager as? LinearListLayout)?.nextFocusLeft = targetId
+    }
+
     private fun RecyclerView?.setAdapter() {
         this?.adapter = SelectAdaptor { data ->
             handleSelection(data)
@@ -144,9 +165,30 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
      * Note that this will steal any focus if the episode loading is too slow (unlikely).
      */
     private fun focusPlayButton() {
-        binding?.resultPlayMovieButton?.requestFocus()
-        binding?.resultPlaySeriesButton?.requestFocus()
-        binding?.resultResumeSeriesButton?.requestFocus()
+        binding?.apply {
+            Log.d(
+                "TVDEBUG",
+                "focusPlayButton: movieVisible=${resultPlayMovie.isVisible} seriesVisible=${resultPlaySeries.isVisible} resumeVisible=${resultResumeSeries.isVisible}"
+            )
+        }
+        // The play/resume buttons are frequently made visible in the same frame this is
+        // called (e.g. from the resume observer right after returning from the player), so
+        // requesting focus synchronously fails because the view has not been laid out yet.
+        // Defer to the next frame, after layout, and focus the first visible play button.
+        val root = binding?.root ?: return
+        root.post {
+            val b = binding ?: return@post
+            val button = listOf(
+                b.resultResumeSeriesButton to b.resultResumeSeries,
+                b.resultPlaySeriesButton to b.resultPlaySeries,
+                b.resultPlayMovieButton to b.resultPlayMovie,
+            ).firstOrNull { (_, container) -> container.isVisible }?.first
+            val ok = button?.requestFocus()
+            Log.d(
+                "TVDEBUG",
+                "focusPlayButton(posted): buttonId=${button?.id} requestFocus=$ok currentFocus=${activity?.currentFocus?.id}"
+            )
+        }
     }
 
     private fun setRecommendations(rec: List<SearchResponse>?, validApiName: String?) {
@@ -233,6 +275,10 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
 
     private fun toggleEpisodes(show: Boolean) {
         binding?.apply {
+            Log.d(
+                "TVDEBUG",
+                "toggleEpisodes(show=$show): episodeHolderVisible=${episodeHolderTv.isVisible} episodesShadowVisible=${episodesShadow.isVisible} episodeAdapterCount=${(resultEpisodes.adapter as? EpisodeAdapter)?.itemCount}"
+            )
             if (show) {
                 activity?.attachBackPressedCallback(this@ResultFragmentTv.toString()) {
                     toggleEpisodes(false)
@@ -261,6 +307,10 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
         activity?.window?.decorView?.clearFocus()
         activity?.loadCache()
         hideKeyboard()
+        Log.d(
+            "TVDEBUG",
+            "onBindingCreated: restart=${storedData.restart} hasLoaded=${viewModel.hasLoaded()} -> willLoad=${storedData.restart || !viewModel.hasLoaded()}"
+        )
         if (storedData.restart || !viewModel.hasLoaded())
             viewModel.load(
                 activity,
@@ -477,6 +527,7 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
         }
 
         observeNullable(viewModel.resumeWatching) { resume ->
+            Log.d("TVDEBUG", "resume observer: resume=${resume == null}, binding=${binding != null}")
             binding.apply {
                 if (resume == null) {
                     return@observeNullable
@@ -775,12 +826,15 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
         }
         observe(viewModel.rangeSelections) {
             binding.resultRangeSelection.update(it)
+            updateEpisodeListLeftFocus()
         }
         observe(viewModel.dubSubSelections) {
             binding.resultDubSelection.update(it)
+            updateEpisodeListLeftFocus()
         }
         observe(viewModel.seasonSelections) {
             binding.resultSeasonSelection.update(it)
+            updateEpisodeListLeftFocus()
         }
         observe(viewModel.recommendations) { recommendations ->
             setRecommendations(recommendations, null)
@@ -804,12 +858,19 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
         // Used to request focus the first time the episodes are loaded.
         var hasLoadedEpisodesOnce = false
         observeNullable(viewModel.episodes) { episodes ->
+            Log.d(
+                "TVDEBUG",
+                "episodes observer: type=${episodes?.javaClass?.simpleName} comingSoon=$comingSoon binding=${binding != null}"
+            )
             if (episodes == null) return@observeNullable
             binding.apply {
                 if (comingSoon) resultBookmarkButton.requestFocus()
 
                 //    resultEpisodeLoading.isVisible = episodes is Resource.Loading
                 if (episodes is Resource.Success) {
+                    Log.d("TVDEBUG", "episodes observer: Success size=${episodes.value.size}")
+                    // Ensure left-focus from the episode list resolves to a visible target.
+                    updateEpisodeListLeftFocus()
                     val lastWatchedIndex = episodes.value.indexOfLast { ep ->
                         ep.getWatchProgress() >= NEXT_WATCH_EPISODE_PERCENTAGE.toFloat() / 100.0f || ep.videoWatchState == VideoWatchState.Watched
                     }
@@ -843,11 +904,16 @@ class ResultFragmentTv : BaseFragment<FragmentResultTvBinding>(
                             )
                             return@setOnLongClickListener true
                         }
+                        resultPlaySeries.isVisible = resultResumeSeries.isGone && !comingSoon
+                        resultEpisodesShow.isVisible = true && !comingSoon
+                        Log.d(
+                            "TVDEBUG",
+                            "episodes observer: firstUnwatched=${firstUnwatched.episode} resumeGone=${resultResumeSeries.isGone} -> playSeriesVisible=${resultPlaySeries.isVisible} episodesShowVisible=${resultEpisodesShow.isVisible}"
+                        )
                         if (!hasLoadedEpisodesOnce) {
                             hasLoadedEpisodesOnce = true
-                            resultPlaySeries.isVisible = resultResumeSeries.isGone && !comingSoon
-                            resultEpisodesShow.isVisible = true && !comingSoon
-                            resultPlaySeriesButton.requestFocus()
+                            val ok = resultPlaySeriesButton.requestFocus()
+                            Log.d("TVDEBUG", "episodes observer: first-load requestFocus(playSeries)=$ok")
                         }
                     }
 

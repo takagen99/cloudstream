@@ -86,6 +86,8 @@
     <string name="show_title_key">show_title_key</string>
     <string name="show_episode_text_key">show_episode_text_key</string>
     <string name="hide_player_control_names_key">hide_player_control_names_key</string>
+    <string name="pause_video_on_dialog_key">pause_video_on_dialog_key</string>
+    <string name="show_remaining_time_key">show_remaining_time_key</string>
     <string name="preview_seekbar_key">preview_seekbar_key</string>
     <string name="backup_path_key">backup_path_key</string>
     <string name="backup_dir_key">backup_dir_key</string>

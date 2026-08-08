@@ -711,9 +711,15 @@
     <string name="sort_release_date_new">Release Date (New to Old)</string>
     <string name="sort_release_date_old">Release Date (Old to New)</string>
     <string name="hide_player_control_names">Hide names of the player\'s controls</string>
+    <string name="pause_video_on_dialog">Pause when opening dialogs</string>
+    <string name="pause_video_on_dialog_des">Pause the video while the Speed, Source, Tracks or Episodes dialog is open. When off, playback continues in the background.</string>
+    <string name="show_remaining_time">Show remaining time</string>
+    <string name="show_remaining_time_desc">Show a countdown of the time left instead of the total video duration</string>
+    <string name="player_press_back_again">Press back again to exit</string>
     <string name="preview_seekbar">Seekbar preview</string>
     <string name="preview_seekbar_desc">Enable preview thumbnail on seekbar</string>
     <string name="no_subtitles_loaded">No subtitles loaded yet</string>
+    <string name="subtitles_search_failed">Could not reach some subtitle providers</string>
     <string name="backup_path_title">Backup folder location</string>
     <string name="custom">Custom</string>
     <!--confirm exit dialog-->

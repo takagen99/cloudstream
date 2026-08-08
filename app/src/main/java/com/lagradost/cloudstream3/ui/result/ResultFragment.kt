@@ -185,6 +185,7 @@ object ResultFragment {
 
     fun updateUI(id: Int? = null) {
         // updateUIListener?.invoke()
+        android.util.Log.d("TVDEBUG", "ResultFragment.updateUI(static): invoking updateUIEvent id=$id")
         updateUIEvent.invoke(id)
     }
 
