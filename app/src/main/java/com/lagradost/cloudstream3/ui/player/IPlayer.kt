@@ -216,6 +216,10 @@ interface IPlayer {
     /** Current player position in milliseconds */
     fun getPosition(): Long?
 
+    /** Cumulative bytes downloaded so far, or null if unavailable. The UI diffs this over time
+     *  to show a live transfer rate. */
+    fun getTotalBytesTransferred(): Long? = null
+
     fun seekTime(time: Long, source: PlayerEventSource = PlayerEventSource.UI)
     fun seekTo(time: Long, source: PlayerEventSource = PlayerEventSource.UI)
 

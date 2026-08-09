@@ -13,6 +13,7 @@ import android.media.metrics.PlaybackErrorEvent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.format.DateUtils
 import android.util.AttributeSet
 import android.util.Log
@@ -69,6 +70,7 @@ import com.lagradost.cloudstream3.utils.UIHelper.showSystemUI
 import com.lagradost.cloudstream3.utils.UserPreferenceDelegate
 import com.lagradost.cloudstream3.utils.videoskip.VideoSkipStamp
 import java.net.SocketTimeoutException
+import java.util.Locale
 
 /**
  * Shared player view - manages ExoPlayer setup, view binding, lifecycle, and event
@@ -191,6 +193,7 @@ class PlayerView @JvmOverloads constructor(
     var playerPausePlayHolderHolder: FrameLayout? = null
     var playerPausePlay: ImageView? = null
     var playerBuffering: ProgressBar? = null
+    var playerBufferingSpeed: TextView? = null
     /** The Media3/ExoPlayer [androidx.media3.ui.PlayerView] widget. */
     var exoPlayerView: androidx.media3.ui.PlayerView? = null
     var piphide: FrameLayout? = null
@@ -248,6 +251,7 @@ class PlayerView @JvmOverloads constructor(
         exoRewText = root.findViewById(R.id.exo_rew_text)
         piphide = root.findViewById(R.id.piphide)
         playerBuffering = root.findViewById(R.id.player_buffering)
+        playerBufferingSpeed = root.findViewById(R.id.player_buffering_speed)
         playerCenterMenu = root.findViewById(R.id.player_center_menu)
         playerFfwd = root.findViewById(R.id.player_ffwd)
         playerFfwdHolder = root.findViewById(R.id.player_ffwd_holder)
@@ -484,6 +488,7 @@ class PlayerView @JvmOverloads constructor(
 
     /** Releases all player resources. */
     fun release() {
+        stopBufferingSpeedUpdates()
         player.release()
         player.releaseCallbacks()
         player = CS3IPlayer()
@@ -571,6 +576,52 @@ class PlayerView @JvmOverloads constructor(
         exoProgress?.previewOverridePosition = position
     }
 
+    /** Buffering transfer-rate readout */
+
+    private var bufferingSpeedRunnable: Runnable? = null
+    private var lastBytesTotal: Long = 0
+    private var lastBytesTimestamp: Long = 0
+
+    /** Derives a live download rate by diffing the player's cumulative byte counter over a short
+     *  window while buffering, and shows it next to the spinner. */
+    private fun startBufferingSpeedUpdates() {
+        val speedView = playerBufferingSpeed ?: return
+        if (bufferingSpeedRunnable != null) return
+        lastBytesTotal = player.getTotalBytesTransferred() ?: 0
+        lastBytesTimestamp = SystemClock.elapsedRealtime()
+        val runnable = object : Runnable {
+            override fun run() {
+                val total = player.getTotalBytesTransferred()
+                val now = SystemClock.elapsedRealtime()
+                val dt = now - lastBytesTimestamp
+                if (total != null && dt > 0) {
+                    val bps = ((total - lastBytesTotal) * 1000 / dt).coerceAtLeast(0)
+                    speedView.isVisible = true
+                    speedView.text = formatBytesPerSecond(bps)
+                    lastBytesTotal = total
+                    lastBytesTimestamp = now
+                } else if (total == null) {
+                    speedView.isVisible = false
+                }
+                speedView.postDelayed(this, 700)
+            }
+        }
+        bufferingSpeedRunnable = runnable
+        // Delay the first tick so there is a measurement window (avoids an initial 0).
+        speedView.postDelayed(runnable, 700)
+    }
+
+    private fun stopBufferingSpeedUpdates() {
+        bufferingSpeedRunnable?.let { playerBufferingSpeed?.removeCallbacks(it) }
+        bufferingSpeedRunnable = null
+        playerBufferingSpeed?.isVisible = false
+    }
+
+    private fun formatBytesPerSecond(bps: Long): String = when {
+        bps >= 1_000_000 -> String.format(Locale.US, "%.1f MB/s", bps / 1_000_000.0)
+        else -> "${bps / 1000} KB/s"
+    }
+
     /** Player UI helpers */
 
     private fun keepScreenOn(on: Boolean) {
@@ -589,9 +640,11 @@ class PlayerView @JvmOverloads constructor(
         if (isBuffering) {
             playerPausePlayHolderHolder?.isVisible = false
             playerBuffering?.isVisible = true
+            startBufferingSpeedUpdates()
         } else {
             playerPausePlayHolderHolder?.isVisible = true
             playerBuffering?.isVisible = false
+            stopBufferingSpeedUpdates()
 
             if (isPlaying == CSPlayerLoading.IsEnded && isLayout(PHONE)) {
                 playerPausePlay?.setImageResource(R.drawable.ic_baseline_replay_24)

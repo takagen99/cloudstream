@@ -81,7 +81,6 @@ import com.lagradost.cloudstream3.ui.player.CS3IPlayer.Companion.preferredAudioT
 import com.lagradost.cloudstream3.ui.player.CustomDecoder.Companion.updateForcedEncoding
 import com.lagradost.cloudstream3.ui.player.PlayerSubtitleHelper.Companion.toSubtitleMimeType
 import com.lagradost.cloudstream3.ui.player.source_priority.LinkSource
-import com.lagradost.cloudstream3.ui.player.source_priority.ProfileSettings
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityDataHelper
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityDataHelper.getLinkPriority
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityProfileDialog
@@ -135,7 +134,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.Serializable
-import java.lang.ref.WeakReference
 import java.util.Calendar
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -601,7 +599,7 @@ class GeneratorPlayer : FullScreenPlayer() {
         dialog.setContentView(binding.root)
         // Uniform transparency: one scrim layer on the root, clear the ListView's opaque
         // background so the empty area isn't darker than the rest (matches source/tracks dialogs).
-        binding.root.setBackgroundResource(R.color.player_dialog_scrim)
+        binding.root.setBackgroundResource(R.color.black_60)
         binding.subtitleAdapter.setBackgroundColor(Color.TRANSPARENT)
         fixSystemBarsPadding(binding.root)
 
@@ -1048,7 +1046,7 @@ class GeneratorPlayer : FullScreenPlayer() {
 
                 // Uniform transparency: one scrim layer on the root, and clear the ListView
                 // backgrounds so content areas aren't darker than empty areas.
-                binding.root.setBackgroundResource(R.color.player_dialog_scrim)
+                binding.root.setBackgroundResource(R.color.black_60)
                 binding.sortProviders.setBackgroundColor(Color.TRANSPARENT)
                 binding.sortSubtitles.setBackgroundColor(Color.TRANSPARENT)
                 binding.sortSubtitlesOptions.setBackgroundColor(Color.TRANSPARENT)
@@ -1447,7 +1445,7 @@ class GeneratorPlayer : FullScreenPlayer() {
                 trackDialog.setContentView(binding.root)
                 // Uniform transparency: one scrim layer on the root, and clear the ListView
                 // backgrounds so content areas aren't darker than empty areas.
-                binding.root.setBackgroundResource(R.color.player_dialog_scrim)
+                binding.root.setBackgroundResource(R.color.black_60)
                 binding.videoTracksList.setBackgroundColor(Color.TRANSPARENT)
                 binding.autoTracksList.setBackgroundColor(Color.TRANSPARENT)
                 trackDialog.show()

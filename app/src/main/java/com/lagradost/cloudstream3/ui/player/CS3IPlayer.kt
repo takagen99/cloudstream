@@ -46,6 +46,7 @@ import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.Renderer.STATE_ENABLED
@@ -137,6 +138,15 @@ const val toleranceAfterUs = 300_000L
 class CS3IPlayer : IPlayer {
     private var playerListener: Player.Listener? = null
     private var isPlaying = false
+
+    /** Feeds the running byte counter used to show a live download rate while buffering. */
+    private var bandwidthMeter: DefaultBandwidthMeter? = null
+
+    /** Cumulative bytes downloaded, summed from each bandwidth sample. The UI diffs this over a
+     *  short window to derive a live transfer rate (rather than the meter's slow smoothed estimate). */
+    @Volatile
+    private var bytesTransferredTotal: Long = 0
+
     private var exoPlayer: ExoPlayer? = null
         set(value) {
             // If the old value is not null then the player has not been properly released.
@@ -198,6 +208,10 @@ class CS3IPlayer : IPlayer {
     override fun getPosition(): Long? = exoPlayer?.currentPosition
     override fun getIsPlaying(): Boolean = isPlaying
     override fun getPlaybackSpeed(): Float = playBackSpeed
+
+    // Cumulative downloaded bytes; the UI diffs this over a short window for a live rate.
+    override fun getTotalBytesTransferred(): Long? =
+        if (bandwidthMeter != null) bytesTransferredTotal else null
 
     /**
      * Tracks reported to be used by exoplayer, since sometimes it has a mind of it's own when selecting subs.
@@ -618,6 +632,8 @@ class CS3IPlayer : IPlayer {
         //simpleCache?.release()
 
         exoPlayer = null
+        bandwidthMeter = null
+        bytesTransferredTotal = 0
         event(PlayerAttachedEvent(null))
         //simpleCache = null
     }
@@ -1081,8 +1097,19 @@ class CS3IPlayer : IPlayer {
         /** External audio tracks to merge with the video */
         audioSources: List<MediaSource> = emptyList()
     ): ExoPlayer {
+        val currentBandwidthMeter = DefaultBandwidthMeter.Builder(context).build()
+        bandwidthMeter = currentBandwidthMeter
+        bytesTransferredTotal = 0
+        // Accumulate downloaded bytes; the UI derives a live rate by diffing this over time.
+        currentBandwidthMeter.addEventListener(Handler(Looper.getMainLooper())) { _, bytesTransferred, _ ->
+            if (bytesTransferred > 0) {
+                bytesTransferredTotal += bytesTransferred
+            }
+        }
+
         val exoPlayerBuilder =
             ExoPlayer.Builder(context)
+                .setBandwidthMeter(currentBandwidthMeter)
                 .setMediaSourceFactory(
                     DefaultMediaSourceFactory(context).setLiveTargetOffsetMs(
                         PREFERRED_LIVE_OFFSET

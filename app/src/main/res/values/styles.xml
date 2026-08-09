@@ -591,7 +591,7 @@
     </style>
 
     <style name="DialogFullscreenPlayer" parent="DialogFullscreen">
-        <item name="android:windowBackground">@color/player_dialog_scrim</item>
+        <item name="android:windowBackground">@color/black_60</item>
         <item name="android:backgroundDimAmount">0</item>
         <item name="android:windowTranslucentNavigation">false</item>
         <item name="android:windowTranslucentStatus">false</item>

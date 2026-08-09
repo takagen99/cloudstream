@@ -1110,11 +1110,13 @@
         android:id="@+id/player_episode_overlay"
         android:visibility="gone"
         android:padding="5dp"
-        android:background="@color/player_dialog_scrim"
+        android:paddingStart="100dp"
+        android:background="@drawable/episodes_shadow"
         android:orientation="vertical"
         android:layout_gravity="end"
         android:layout_width="wrap_content"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        tools:ignore="RtlSymmetry">
 
         <TextView
             android:id="@+id/player_episode_overlay_title"
