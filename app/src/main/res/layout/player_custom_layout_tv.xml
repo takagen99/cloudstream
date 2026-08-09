@@ -370,6 +370,26 @@
                 tools:text="Skip Opening"
                 tools:visibility="visible" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/player_exit_hint"
+                style="@style/VideoButtonTV"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/player_exit_hint_bg"
+                android:focusable="false"
+                android:maxLines="1"
+                android:text="@string/player_press_back_again"
+                android:textColor="@color/black"
+                android:textSize="15sp"
+                android:visibility="gone"
+                app:icon="@drawable/ic_baseline_arrow_back_24"
+                app:iconTint="@color/black"
+                app:layout_constraintBottom_toTopOf="@+id/bottom_player_bar"
+                app:layout_constraintEnd_toEndOf="parent"
+                tools:visibility="visible" />
+
             <FrameLayout
                 android:id="@+id/player_top_holder"
                 android:layout_width="match_parent"

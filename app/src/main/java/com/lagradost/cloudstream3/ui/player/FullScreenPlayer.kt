@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.ui.player
 
 import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Dialog
@@ -28,6 +29,7 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AlertDialog
+import androidx.core.animation.addListener
 import androidx.core.graphics.blue
 import androidx.core.graphics.green
 import androidx.core.graphics.red
@@ -462,6 +464,59 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
     /** Timestamp of the last back press used for the TV "press back again to exit" prompt. */
     private var mExitTime: Long = 0
 
+    private var exitHintAnimator: ValueAnimator? = null
+    private var exitHintIndex = 0
+
+    /**
+     * Shows the "press back again to exit" prompt using the same width-expand reveal as the
+     * skip-opening button (see [GeneratorPlayer.displayTimeStamp]) instead of a plain toast.
+     * Auto-collapses after the 2s exit window unless another back press re-triggers it.
+     */
+    private fun showExitHint() {
+        val button = playerBinding?.playerExitHint ?: run {
+            // No hint view in this layout (e.g. trailer) — fall back to the toast.
+            showToast(R.string.player_press_back_again, Toast.LENGTH_SHORT)
+            return
+        }
+        exitHintIndex++
+        val currentIndex = exitHintIndex
+        button.text = context?.getString(R.string.player_press_back_again)
+        // Measure the natural width for the text so the reveal expands to exactly fit it.
+        button.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        val expanded = button.measuredWidth.coerceIn(120.toPx, 400.toPx)
+        val collapsed = 10.toPx
+
+        exitHintAnimator?.cancel()
+        button.isVisible = true
+        button.layoutParams = button.layoutParams.apply { width = collapsed }
+        exitHintAnimator = ValueAnimator.ofInt(collapsed, expanded).apply {
+            addUpdateListener { va ->
+                button.layoutParams = button.layoutParams.apply { width = va.animatedValue as Int }
+            }
+            duration = 500
+            start()
+        }
+        button.handler?.postDelayed({
+            if (exitHintIndex == currentIndex) hideExitHint()
+        }, 2000)
+    }
+
+    private fun hideExitHint() {
+        val button = playerBinding?.playerExitHint ?: return
+        exitHintAnimator?.cancel()
+        exitHintAnimator = ValueAnimator.ofInt(button.width, 10.toPx).apply {
+            addListener(onEnd = { button.isVisible = false })
+            addUpdateListener { va ->
+                button.layoutParams = button.layoutParams.apply { width = va.animatedValue as Int }
+            }
+            duration = 300
+            start()
+        }
+    }
+
     override fun onResume() {
         playerHostView?.enterFullscreen { updateOrientation() }
         setupKeyEventListener()
@@ -485,7 +540,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                     activity?.popCurrentPage("FullScreenPlayer")
                 } else {
                     mExitTime = now
-                    showToast(R.string.player_press_back_again, Toast.LENGTH_SHORT)
+                    showExitHint()
                 }
             } else {
                 activity?.popCurrentPage("FullScreenPlayer")
