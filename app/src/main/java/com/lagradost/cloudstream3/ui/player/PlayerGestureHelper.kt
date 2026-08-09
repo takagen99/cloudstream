@@ -1188,10 +1188,12 @@ class PlayerGestureHelper(private val playerView: PlayerView) {
                             if (startTime != null) {
                                 calculateNewTime(startTime, startTouch, currentTouch)?.let { newMs ->
                                     val skipMs = newMs - startTime
+                                    val duration = playerView.player.getDuration() ?: 0L
                                     playerView.callbacks?.onSeekPreviewText(
                                         "${convertTimeToString(newMs / 1000)} [${
                                             if (abs(skipMs) < 1000) "" else if (skipMs > 0) "+" else "-"
-                                        }${convertTimeToString(abs(skipMs / 1000))}]"
+                                        }${convertTimeToString(abs(skipMs / 1000))}]",
+                                        if (duration > 0) newMs.toFloat() / duration else null,
                                     )
                                 }
                             }

@@ -149,8 +149,12 @@ class PlayerView @JvmOverloads constructor(
         fun isUIShowing(): Boolean = false
         /** Called on a valid ACTION_DOWN; use for e.g. dismissing an episode overlay. */
         fun onTouchDown() {}
-        /** Called with seek-preview text during a horizontal-swipe, or null to clear it. */
-        fun onSeekPreviewText(text: String?) {}
+        /**
+         * Called with seek-preview text during a horizontal-swipe/dpad seek, or null to clear it.
+         * [progress] is the target position as a fraction of the total duration (0..1), used to
+         * fill the preview progress bar.
+         */
+        fun onSeekPreviewText(text: String?, progress: Float? = null) {}
         /** Called when a swipe gesture begins; hide the player UI if desired. */
         fun onHidePlayerUI() {}
         /**

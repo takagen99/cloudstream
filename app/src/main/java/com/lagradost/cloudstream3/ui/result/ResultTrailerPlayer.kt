@@ -167,7 +167,7 @@ class ResultTrailerPlayer : ResultFragmentPhone() {
     override fun onTracksInfoChanged() {}
     override fun exitedPipMode() {}
 
-    override fun onSeekPreviewText(text: String?) {
+    override fun onSeekPreviewText(text: String?, progress: Float?) {
         playerBinding?.playerTimeText?.apply {
             isVisible = text != null
             if (text != null) this.text = text

@@ -915,12 +915,51 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         if (isShowingEpisodeOverlay) toggleEpisodesOverlay(show = false)
     }
 
+    private var seekPreviewShown = false
+
     @SuppressLint("SetTextI18n")
-    override fun onSeekPreviewText(text: String?) {
-        playerBinding?.playerTimeText?.apply {
-            isVisible = text != null
-            if (text != null) this.text = text
+    override fun onSeekPreviewText(text: String?, progress: Float?) {
+        val binding = playerBinding ?: return
+        val pill = binding.playerTimePill
+        if (text == null) {
+            if (seekPreviewShown) {
+                seekPreviewShown = false
+                animateSeekPillOut(pill)
+            }
+            return
         }
+        binding.playerTimeText.text = text
+        progress?.let {
+            binding.playerTimeProgress.progress = (it * 1000).toInt().coerceIn(0, 1000)
+        }
+        if (!seekPreviewShown) {
+            seekPreviewShown = true
+            animateSeekPillIn(pill)
+        }
+    }
+
+    // Grow the seek pill in from a smaller, semi-transparent state (mirrors the volume/brightness
+    // sliders). Deferred to post() so the pivot is computed after layout.
+    private fun animateSeekPillIn(view: View) {
+        view.animate().cancel()
+        view.alpha = 0f
+        view.isVisible = true
+        view.post {
+            view.pivotX = view.width / 2f
+            view.pivotY = view.height / 2f
+            view.scaleX = 0.85f
+            view.scaleY = 0.85f
+            view.alpha = 0.4f
+            view.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(150).start()
+        }
+    }
+
+    private fun animateSeekPillOut(view: View) {
+        view.animate().cancel()
+        view.pivotX = view.width / 2f
+        view.pivotY = view.height / 2f
+        view.animate().alpha(0f).scaleX(0.85f).scaleY(0.85f).setDuration(350)
+            .withEndAction { view.isVisible = false }.start()
     }
 
     override fun onHidePlayerUI() {
@@ -1154,7 +1193,8 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         val delta = target - start
         val sign = if (abs(delta) < 1000) "" else if (delta > 0) "+" else "-"
         onSeekPreviewText(
-            "${DateUtils.formatElapsedTime(target / 1000)} [$sign${DateUtils.formatElapsedTime(abs(delta) / 1000)}]"
+            "${DateUtils.formatElapsedTime(target / 1000)} [$sign${DateUtils.formatElapsedTime(abs(delta) / 1000)}]",
+            if (duration > 0) target.toFloat() / duration else null,
         )
     }
 
