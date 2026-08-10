@@ -107,6 +107,9 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
     protected var rotatedManually = false
     private var hideControlsNames = false
 
+    /** Mirrors the "Skip OP" player setting; when false the control-row Skip OP button is hidden. */
+    protected var skipOpEnabled = true
+
     /** When true, opening the Speed/Source/Tracks/Episodes dialogs pauses the video
      *  (and resumes on dismiss). When false, playback continues behind the dialog. */
     protected var pauseVideoOnDialog = false
@@ -1411,6 +1414,10 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
                 pauseVideoOnDialog = settingsManager.getBoolean(
                     ctx.getString(R.string.pause_video_on_dialog_key),
                     false
+                )
+                skipOpEnabled = settingsManager.getBoolean(
+                    ctx.getString(R.string.enable_skip_op_from_database),
+                    true
                 )
 
                 val profiles = QualityDataHelper.getProfiles()

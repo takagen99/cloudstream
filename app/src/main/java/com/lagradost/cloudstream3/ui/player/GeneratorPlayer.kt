@@ -544,6 +544,7 @@ class GeneratorPlayer : FullScreenPlayer() {
 
         if (!sameEpisode) {
             player.addTimeStamps(emptyList()) // clear stamps
+            shownStamps.clear() // let the new episode's stamps show once
             // Resets subtitle delay, as we watch some other content
             player.setSubtitleOffset(0)
         }
@@ -1792,7 +1793,9 @@ class GeneratorPlayer : FullScreenPlayer() {
                     }
                 }
 
-                if (meta.tvType.isAnimeOp()) isOpVisible = percentage < SKIP_OP_VIDEO_PERCENTAGE
+                // Gated on the "Skip OP" player setting so turning it off hides the button too.
+                if (skipOpEnabled && meta.tvType.isAnimeOp())
+                    isOpVisible = percentage < SKIP_OP_VIDEO_PERCENTAGE
             }
         }
 
@@ -2088,6 +2091,11 @@ class GeneratorPlayer : FullScreenPlayer() {
     var skipAnimator: ValueAnimator? = null
     var skipIndex = 0
 
+    /** Skip stamps already presented this episode. A stamp fires on every position tick while the
+     *  playhead is inside its window, so without this the popup keeps re-appearing (very noticeable
+     *  while buffering). Cleared on episode change so each new episode's stamps show once. */
+    private val shownStamps = HashSet<VideoSkipStamp>()
+
     private fun displayTimeStamp(show: Boolean) {
         if (timestampShowState == show) return
         skipIndex++
@@ -2144,6 +2152,9 @@ class GeneratorPlayer : FullScreenPlayer() {
 
     override fun onTimestamp(timestamp: VideoSkipStamp?) {
         if (timestamp != null) {
+            // Show each stamp only once per episode; ignore repeat ticks (incl. while buffering)
+            // so the popup doesn't keep re-appearing whether or not the user acted on it.
+            if (!shownStamps.add(timestamp)) return
             playerBinding?.skipChapterButton?.setText(timestamp.uiText)
             displayTimeStamp(true)
             val currentIndex = skipIndex
