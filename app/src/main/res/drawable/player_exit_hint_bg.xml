@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Opaque white pill for the "press back again to exit" hint, matching the focused Skip Opening
+     button look (white background, black text) but without depending on focus state. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/white" />
+    <corners android:radius="8dp" />
+</shape>

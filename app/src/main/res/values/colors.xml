@@ -9,6 +9,7 @@
 
     <color name="primaryGrayBackground">#2B2C30</color> <!--0f0f10 0E0E10 303135 2B2C30-->
     <color name="primaryBlackBackground">#111111</color> <!--1C1C20 191a1f 19181E 202125 1C1C20-->
+    <color name="popupSemiTransparent">#E6111111</color> <!-- ~90% opaque popup menu bg -->
     <color name="iconGrayBackground">#1C1C20</color> <!--141419 202125-->
     <color name="boxItemBackground">#161616</color> <!-- 17171B 1B1B20-->
 

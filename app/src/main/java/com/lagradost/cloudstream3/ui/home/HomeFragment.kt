@@ -388,6 +388,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
 
             builder.setContentView(binding.root)
             builder.show()
+            // Make only the sheet panel ~90% opaque; content and buttons stay fully opaque.
+            builder.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+                ?.setBackgroundResource(R.drawable.bottom_sheet_semi_transparent)
             builder.let { dialog ->
                 val isMultiLang = getApiProviderLangSettings().let { set ->
                     set.size > 1 || set.contains(AllLanguagesName)

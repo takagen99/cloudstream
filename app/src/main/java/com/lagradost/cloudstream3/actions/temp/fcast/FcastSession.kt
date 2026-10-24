@@ -3,7 +3,6 @@ package com.lagradost.cloudstream3.actions.temp.fcast
 import android.util.Log
 import androidx.annotation.WorkerThread
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
-import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.safefile.closeQuietly
 import java.io.DataOutputStream
 import java.net.Socket
@@ -35,26 +34,28 @@ class FcastSession(private val hostAddress: String): AutoCloseable {
         sendMessage(Opcode.Ping, null)
     }
 
+    // Blocking: must be called from a worker thread (the socket write races with close() if this
+    // is fire-and-forget, and the payload must be flushed before the caller's use{} closes it).
+    @WorkerThread
     fun <T> sendMessage(opcode: Opcode, message: T) {
-        ioSafe {
-            val socket = acquireSocket()
-            val outputStream = DataOutputStream(socket.getOutputStream())
+        val socket = acquireSocket()
+        val outputStream = DataOutputStream(socket.getOutputStream())
 
-            val json = message?.toJson()
-            val content = json?.toByteArray() ?: ByteArray(0)
+        val json = message?.toJson()
+        val content = json?.toByteArray() ?: ByteArray(0)
 
-            // Little endian starting from 1
-            // https://gitlab.com/futo-org/fcast/-/wikis/Protocol-version-1
-            val size = content.size + 1
+        // Little endian starting from 1
+        // https://gitlab.com/futo-org/fcast/-/wikis/Protocol-version-1
+        val size = content.size + 1
 
-            val sizeArray = ByteArray(4) { num ->
-                (size shr 8 * num and 0xff).toByte()
-            }
-
-            Log.d(tag, "Sending message with size: $size, opcode: $opcode")
-            outputStream.write(sizeArray)
-            outputStream.write(ByteArray(1) { opcode.value })
-            outputStream.write(content)
+        val sizeArray = ByteArray(4) { num ->
+            (size shr 8 * num and 0xff).toByte()
         }
+
+        Log.d(tag, "Sending message with size: $size, opcode: $opcode")
+        outputStream.write(sizeArray)
+        outputStream.write(ByteArray(1) { opcode.value })
+        outputStream.write(content)
+        outputStream.flush()
     }
 }

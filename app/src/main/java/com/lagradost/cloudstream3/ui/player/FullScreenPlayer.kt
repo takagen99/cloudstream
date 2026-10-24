@@ -965,12 +965,27 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
     override fun isUIShowing(): Boolean = isShowing
 
+    // When a tap closes the episode overlay we must not also toggle the controls back on. The
+    // overlay is dismissed on ACTION_DOWN (onTouchDown), so this remembers that the following tap
+    // (onSingleTap, on ACTION_UP) was already consumed by the dismissal.
+    private var overlayDismissedByTap = false
+
     override fun onSingleTap() {
+        if (overlayDismissedByTap) {
+            overlayDismissedByTap = false
+            return
+        }
         onClickChange()
     }
 
     override fun onTouchDown() {
-        if (isShowingEpisodeOverlay) toggleEpisodesOverlay(show = false)
+        if (isShowingEpisodeOverlay) {
+            toggleEpisodesOverlay(show = false)
+            overlayDismissedByTap = true
+        } else {
+            // Reset so a stale flag from a non-tap gesture can't swallow the next tap.
+            overlayDismissedByTap = false
+        }
     }
 
     private var seekPreviewShown = false
@@ -1207,7 +1222,7 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
 
             // Colored buttons on TV remotes
             KeyEvent.KEYCODE_PROG_RED -> {
-                player.handleEvent(CSPlayerEvent.NextEpisode)
+                toggleEpisodesOverlay(show = true)
             }
 
             KeyEvent.KEYCODE_PROG_GREEN -> {
@@ -1246,6 +1261,13 @@ open class FullScreenPlayer : AbstractPlayerFragment<FragmentPlayerBinding>(
         if (isShowing) autoHide()
         // Move the scrubber thumb to the target so the user sees where they'll land.
         playerHostView?.setSeekPreviewPosition(target)
+
+        // On the TV layout the visible seekbar already shows the target while the controls are up,
+        // so the separate seek-preview pill would be redundant — suppress it in that case.
+        if (isLayout(TV or EMULATOR) && isShowing) {
+            onSeekPreviewText(null)
+            return
+        }
 
         val start = dpadSeekStartPosition ?: livePosition
         val delta = target - start

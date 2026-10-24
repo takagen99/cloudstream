@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ~90% opaque bottom-sheet panel background (rounded top). Applied to design_bottom_sheet so only
+     the panel is see-through; the content/buttons drawn on top stay fully opaque. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/popupSemiTransparent" />
+    <corners
+        android:topLeftRadius="16dp"
+        android:topRightRadius="16dp" />
+</shape>

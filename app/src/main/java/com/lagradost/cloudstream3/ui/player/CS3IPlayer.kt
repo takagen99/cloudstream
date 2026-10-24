@@ -674,7 +674,20 @@ class CS3IPlayer : IPlayer {
     }
 
     companion object {
-        private const val CRONET_TIMEOUT_MS = 15_000
+        private const val CRONET_TIMEOUT_MS = 30_000
+
+        // Buffer tuning aimed at high-bitrate (4K/remux) sources that otherwise
+        // fall into a re-buffer-every-few-seconds stutter loop. The key value is
+        // BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS: after a stall we accumulate a real
+        // cushion before resuming instead of restarting on ~5s and immediately
+        // draining again. Media3 defaults for reference: min 50000, max 50000,
+        // forPlayback 2500, afterRebuffer 5000.
+        // Constraints (enforced by DefaultLoadControl.Builder):
+        //   forPlayback <= min, afterRebuffer <= min, max >= min.
+        private const val MIN_BUFFER_MS = 50_000
+        private const val MAX_BUFFER_MS = 120_000
+        private const val BUFFER_FOR_PLAYBACK_MS = 5_000
+        private const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 12_000
 
         /**
          * Single shared engine, to minimize the overhead of maintaining many as:
@@ -1264,14 +1277,15 @@ class CS3IPlayer : IPlayer {
                             true
                         )
                         .setBufferDurationsMs(
-                            DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+                            MIN_BUFFER_MS,
                             if (videoBufferMs <= 0) {
-                                DefaultLoadControl.DEFAULT_MAX_BUFFER_MS
+                                MAX_BUFFER_MS
                             } else {
-                                videoBufferMs.toInt()
+                                // User-selected max must still satisfy max >= min.
+                                maxOf(videoBufferMs.toInt(), MIN_BUFFER_MS)
                             },
-                            DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                            DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                            BUFFER_FOR_PLAYBACK_MS,
+                            BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
                         ).build()
                 )
 

@@ -707,7 +707,12 @@ class MainActivity : AppCompatActivity(), ColorPickerDialogListener, BiometricCa
                 if (isLayout(TV)) exitProcess(0) else finish()
             }
 
-        builder.show().setDefaultFocus()
+        val exitDialog = builder.show()
+        exitDialog.setDefaultFocus()
+        // Make it ~90% opaque so the content behind shows through, matching the home dialogs.
+        exitDialog.window?.let { w ->
+            val p = w.attributes; p.alpha = 0.9f; w.attributes = p
+        }
     }
 
     override fun onDestroy() {

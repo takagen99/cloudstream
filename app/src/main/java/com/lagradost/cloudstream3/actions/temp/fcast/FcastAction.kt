@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.CloudStreamApp.Companion.getActivity
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.actions.VideoClickAction
+import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.ui.result.LinkLoadingResult
 import com.lagradost.cloudstream3.ui.result.ResultEpisode
 import com.lagradost.cloudstream3.utils.txt
@@ -51,19 +52,23 @@ class FcastAction: VideoClickAction() {
     private fun castTo(device: PublicDeviceInfo?, link: ExtractorLink, position: Long?) {
         val host = device?.host ?: return
 
-        FcastSession(host).use { session ->
-            session.sendMessage(
-                Opcode.Play,
-                PlayMessage(
-                    link.type.getMimeType(),
-                    link.url,
-                    time = position?.let { it / 1000.0 },
-                    headers = mapOf(
-                        "referer" to link.referer,
-                        "user-agent" to USER_AGENT
-                    ) + link.headers
+        // Network I/O off the UI thread; the socket must stay open until sendMessage has flushed,
+        // so keep the whole session use{} inside the coroutine (see FcastSession.sendMessage).
+        ioSafe {
+            FcastSession(host).use { session ->
+                session.sendMessage(
+                    Opcode.Play,
+                    PlayMessage(
+                        link.type.getMimeType(),
+                        link.url,
+                        time = position?.let { it / 1000.0 },
+                        headers = mapOf(
+                            "referer" to link.referer,
+                            "user-agent" to USER_AGENT
+                        ) + link.headers
+                    )
                 )
-            )
+            }
         }
     }
 }

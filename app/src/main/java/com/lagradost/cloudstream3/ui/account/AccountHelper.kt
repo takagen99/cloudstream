@@ -6,6 +6,7 @@ import android.content.DialogInterface
 import android.os.Bundle
 import android.text.Editable
 import android.view.LayoutInflater
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.TextView
 import android.widget.Toast
@@ -366,6 +367,9 @@ object AccountHelper {
         val builder = BottomSheetDialog(activity)
         builder.setContentView(binding.root)
         builder.show()
+        // Make only the sheet panel ~90% opaque; content and buttons stay fully opaque.
+        builder.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            ?.setBackgroundResource(R.drawable.bottom_sheet_semi_transparent)
 
         binding.manageAccountsButton.setOnClickListener {
             activity.navigate(
